@@ -286,16 +286,12 @@
         }
     }
 
-    // Hàm speak đã được điều chỉnh (FIXED VERSION)
-    function speak(text, textOffset = 0) { // <--- FIX 1: Thêm tham số textOffset
-        if (isReading) { // Nếu đang đọc, dừng lại trước khi bắt đầu cái mới
+    function speak(text, textOffset = 0) {
+        if (isReading) {
             speechSynthesis.cancel();
         }
-        removeHighlight(); // Đảm bảo mọi highlight cũ bị xóa trước khi bắt đầu đọc mới
-
-        // Lưu trữ HTML gốc của text-area trước khi nó bị thay đổi bởi highlight
+        removeHighlight();
         originalTextAreaContent = document.getElementById('text-area').innerHTML;
-
         const cleanedText = text.replace(/[\u2500-\u25FF\u2B00-\u2BFF]/g, '')
                                 .replace(/Kiểm tra/g, '')
                                 .replace(/Gõ lại câu này/g, '')
@@ -306,37 +302,31 @@
             isReading = false;
             return;
         }
-
         currentUtterance = new SpeechSynthesisUtterance(cleanedText);
         currentUtterance.lang = 'de-DE';
         if (germanTTSVoice) currentUtterance.voice = germanTTSVoice;
         currentUtterance.rate = currentPlaybackRate;
-
         currentUtterance.onboundary = function(event) {
             if (event.name === 'word') {
                 const word = currentUtterance.text.substring(event.charIndex, event.charIndex + event.charLength);
-                // <--- FIX 2: Cộng offset để có vị trí tuyệt đối
                 applyHighlight(word, textOffset + event.charIndex);
             }
         };
-
         currentUtterance.onstart = function() {
             isReading = true;
         };
-
         currentUtterance.onend = function() {
             isReading = false;
             removeHighlight();
             currentUtterance = null;
             originalTextAreaContent = "";
         };
-
         speechSynthesis.speak(currentUtterance);
     }
 
     function speakQuestion(index) {
         const text = document.querySelector(`.question-block[data-index="${index}"] .question-text`).textContent;
-        speak(text); // Ở đây offset là 0, vẫn đúng
+        speak(text);
     }
 
     function addNewQuestion() {
@@ -602,7 +592,7 @@
                                    node.parentNode.classList.contains('script-checker-clear-button'))) {
                 return NodeFilter.FILTER_REJECT;
             }
-            if (node.nodeValue.trim() === '') {
+            if (!node.nodeValue || node.nodeValue.trim() === '') {
                 return NodeFilter.FILTER_REJECT;
             }
             return NodeFilter.FILTER_ACCEPT;
@@ -620,46 +610,45 @@
     }
 
     function removeHighlight() {
-        // Chỉ khôi phục từ originalTextAreaContent nếu nó đã được lưu
         const textArea = document.getElementById('text-area');
-        const highlightedSpans = textArea.querySelectorAll('.reading-highlight');
-        highlightedSpans.forEach(span => {
-             // Thay thế span bằng nội dung text của nó để tránh mất text
-            span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
-        });
-        textArea.normalize(); // Gộp các text node liền kề
+        if (originalTextAreaContent) {
+            textArea.innerHTML = originalTextAreaContent;
+        } else {
+            const highlightedSpans = textArea.querySelectorAll('.reading-highlight');
+            highlightedSpans.forEach(span => {
+                span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
+            });
+            textArea.normalize();
+        }
     }
-    
-    function applyHighlight(wordText, charIndexInCleanedText) {
-        const textArea = document.getElementById('text-area');
-        // Trước khi highlight từ mới, xóa highlight cũ
-        const oldHighlights = textArea.querySelectorAll('.reading-highlight');
-        oldHighlights.forEach(span => {
-            span.outerHTML = span.innerHTML; // Loại bỏ span highlight và giữ lại nội dung
-        });
-        textArea.normalize(); // Gộp các TextNode liền kề sau khi loại bỏ span
 
+    function applyHighlight(wordText, charIndexInCleanedText) {
+        removeHighlight();
+
+        const textArea = document.getElementById('text-area');
         const fullCleanedText = getTextContentOfTextArea(textArea);
+
         const startIndex = charIndexInCleanedText;
         const endIndex = charIndexInCleanedText + wordText.length;
 
+        const range = document.createRange();
         let currentOffset = 0;
-        const walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
-        let node;
         let startNode = null;
         let endNode = null;
-        let startOffset = 0;
-        let endOffset = 0;
+        let startNodeOffset = 0;
+        let endNodeOffset = 0;
 
-        while (node = walker.nextNode()) {
+        const walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
+        let node;
+        while ((node = walker.nextNode())) {
             const nodeValue = node.nodeValue;
             if (currentOffset <= startIndex && (currentOffset + nodeValue.length) > startIndex && startNode === null) {
                 startNode = node;
-                startOffset = startIndex - currentOffset;
+                startNodeOffset = startIndex - currentOffset;
             }
             if (currentOffset <= endIndex && (currentOffset + nodeValue.length) >= endIndex) {
                 endNode = node;
-                endOffset = endIndex - currentOffset;
+                endNodeOffset = endIndex - currentOffset;
                 break;
             }
             currentOffset += nodeValue.length;
@@ -667,14 +656,14 @@
 
         if (startNode && endNode) {
             try {
-                const range = document.createRange();
-                range.setStart(startNode, startOffset);
-                range.setEnd(endNode, endOffset);
+                range.setStart(startNode, startNodeOffset);
+                range.setEnd(endNode, endNodeOffset);
                 const span = document.createElement('span');
                 span.className = 'reading-highlight';
                 range.surroundContents(span);
             } catch (e) {
                 console.error("Error surrounding contents for highlight:", e);
+                removeHighlight();
             }
         }
     }
@@ -685,8 +674,6 @@
         setTimeout(() => {
             let selectedText = window.getSelection().toString().trim();
             selectedText = selectedText.replace(/Kiểm tra/g, '').replace(/Gõ lại câu này/g, '').replace(/Xóa\/Làm lại/g, '').trim();
-            // Không có cách dễ dàng để lấy offset cho vùng chọn, nên chức năng này sẽ highlight tương đối
-            // vẫn có thể sai nếu có cụm từ lặp lại. Nhưng đây không phải vấn đề chính.
             speak(selectedText);
         }, 100);
     });
@@ -695,63 +682,55 @@
         const textArea = document.getElementById("text-area");
         let fullTextToSpeak = getTextContentOfTextArea(textArea);
         if (fullTextToSpeak && fullTextToSpeak.trim() !== 'Paste text here...') {
-            speak(fullTextToSpeak); // Offset mặc định là 0, chính xác.
+            speak(fullTextToSpeak);
         } else {
             alert("There is no text to read!");
         }
     });
 
+    // ========== HÀM ĐÃ SỬA LỖI HOÀN CHỈNH ==========
     document.getElementById("read-current-sentence").addEventListener("click", function() {
         const textArea = document.getElementById('text-area');
         const selection = window.getSelection();
+
         if (selection.rangeCount === 0) {
             alert("Vui lòng đặt con trỏ chuột vào vị trí muốn đọc hoặc chọn một đoạn văn bản.");
             return;
         }
+
         const range = selection.getRangeAt(0);
-        let fullTextNodes = getTextContentOfTextArea(textArea);
 
-        let offsetInFilteredText = 0;
-        let tempOffset = 0;
-        let foundOffset = false;
-        const tempWalker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
-        let currentWalkerNode;
-        while(currentWalkerNode = tempWalker.nextNode()) {
-            if (currentWalkerNode === range.startContainer) {
-                offsetInFilteredText = tempOffset + range.startOffset;
-                foundOffset = true;
-                break;
-            }
-            tempOffset += currentWalkerNode.nodeValue.length;
-        }
-        if (!foundOffset) {
-             let prevNode = range.startContainer.previousSibling;
-             let calculatedOffset = 0;
-             while(prevNode) {
-                const prevNodeWalker = document.createTreeWalker(prevNode, NodeFilter.SHOW_ALL, null, false);
-                let textContent = '';
-                let node;
-                while(node = prevNodeWalker.nextNode()) {
-                    if (node.nodeType === Node.TEXT_NODE) {
-                       textContent += node.nodeValue;
-                    }
-                }
-                calculatedOffset += getTextContentOfTextArea(prevNode).length
-                prevNode = prevNode.previousSibling;
-            }
-             offsetInFilteredText = calculatedOffset + range.startOffset;
-        }
+        // --- LOGIC TÍNH OFFSET MỚI, ROBUST HƠN ---
+        // Tạo một range từ đầu text area đến vị trí con trỏ
+        const preCursorRange = document.createRange();
+        preCursorRange.selectNodeContents(textArea); // Chọn toàn bộ nội dung
+        preCursorRange.setEnd(range.startContainer, range.startOffset); // Đặt điểm cuối là vị trí con trỏ
 
+        // Clone nội dung trước con trỏ vào một div tạm để xử lý
+        const tempDiv = document.createElement('div');
+        tempDiv.appendChild(preCursorRange.cloneContents());
+
+        // Chạy hàm làm sạch văn bản trên div tạm và lấy độ dài
+        // Đây là cách chính xác nhất để có được vị trí con trỏ trong văn bản đã được lọc
+        const offsetInFilteredText = getTextContentOfTextArea(tempDiv).length;
+        // --- KẾT THÚC LOGIC TÍNH OFFSET MỚI ---
+
+        const fullTextNodes = getTextContentOfTextArea(textArea);
+
+        // Tìm điểm bắt đầu của câu
         let sentenceStart = offsetInFilteredText;
         while (sentenceStart > 0) {
             const char = fullTextNodes[sentenceStart - 1];
-            if (char === '.' || char === '?' || char === '!' || char === '\n') break;
+            if (char === '.' || char === '?' || char === '!' || char === '\n') {
+                break;
+            }
             sentenceStart--;
         }
         while (sentenceStart < fullTextNodes.length && (fullTextNodes[sentenceStart] === ' ' || fullTextNodes[sentenceStart] === '\n' || fullTextNodes[sentenceStart].match(/[.,?!]/))) {
             sentenceStart++;
         }
 
+        // Tìm điểm kết thúc của câu
         let sentenceEnd = offsetInFilteredText;
         while (sentenceEnd < fullTextNodes.length) {
             const char = fullTextNodes[sentenceEnd];
@@ -761,16 +740,17 @@
             }
             sentenceEnd++;
         }
-        
+
         let sentenceToRead = fullTextNodes.substring(sentenceStart, sentenceEnd).trim();
 
         if (sentenceToRead) {
-            // <--- FIX 3: Truyền vào câu và vị trí bắt đầu của nó
+            // Truyền vào câu và vị trí bắt đầu của nó (đã được tính toán chính xác)
             speak(sentenceToRead, sentenceStart);
         } else {
             alert("Không tìm thấy câu để đọc tại vị trí con trỏ.");
         }
     });
+
 
     document.getElementById("highlight-button").addEventListener("click", function () {
         const selection = window.getSelection();
@@ -810,3 +790,5 @@
         addNewQuestion();
     };
 </script>
+</body>
+</html>
