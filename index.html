@@ -192,11 +192,6 @@
     const highlightColors = ["#ffff99", "#99ccff", "#ffcc99", "#ffcccb", "#ffb6c1", "#98fb98", "#dda0dd", "#c19a6b"];
     let currentColorIndex = 0;
 
-    // Các biến để quản lý cửa sổ popup
-    let chatGptWindow = null;
-    let youglishWindow = null; 
-    let googleImagesWindow = null;
-
     function initializeVoices() {
         const voices = speechSynthesis.getVoices();
         germanTTSVoice = voices.find(v => v.name === "Microsoft Amala Online (Natural) - German (Germany)") || voices.find(v => v.name.includes("Amala") && v.lang === "de-DE");
@@ -588,71 +583,9 @@
     });
 
     // =================================================================
-    // =========== KEYBOARD SHORTCUT INTEGRATIONS ======================
+    // =========== KEYBOARD SHORTCUTS & POPUPS ARE REMOVED ===========
     // =================================================================
-    document.addEventListener('keydown', function(event) {
-        // --- START: LOGIC CẬP NHẬT CHO SHIFT + T ---
-        if (event.shiftKey && event.key.toLowerCase() === 't') {
-            event.preventDefault();
-            const selectedText = window.getSelection().toString().trim();
-            if (selectedText) {
-                const prompt = `Chỉnh sửa giúp tôi đoạn văn sau, chỉnh sửa từng câu một, chỉ ra điểm sai và sửa thế nào là hợp lý, viết lại câu đó đúng theo văn viết thì thế nào và văn nói như thế nào. Sau đó thì thêm 2 - 3 câu đồng nghĩa để diễn đạt ý của từng câu đó. Nếu đúng thì Phân tích câu ngôn ngữ sau, tách từng cụm từ ra thành các phần nhỏ, phân tích từng từ trong mỗi phần (bao gồm từ loại, nghĩa tiếng Việt, IPA, vai trò trong câu), Và sau cuối cùng là nghĩa của cả câu:\n\n"${selectedText}"`;
-                const encodedPrompt = encodeURIComponent(prompt);
-                const url = `https://chat.openai.com/?q=${encodedPrompt}`;
-                const windowFeatures = "width=700,height=800,scrollbars=yes,resizable=yes";
-
-                // Logic mới: Kiểm tra nếu cửa sổ đã mở và chưa bị đóng
-                if (chatGptWindow && !chatGptWindow.closed) {
-                    // Nếu cửa sổ còn tồn tại, chỉ cần cập nhật URL và đưa nó lên phía trước
-                    chatGptWindow.location.href = url;
-                    chatGptWindow.focus();
-                } else {
-                    // Nếu cửa sổ chưa được mở hoặc đã bị người dùng đóng, hãy tạo một cửa sổ mới
-                    chatGptWindow = window.open(url, "chatgpt_popup", windowFeatures);
-                }
-            }
-        }
-        // --- END: LOGIC CẬP NHẬT CHO SHIFT + T ---
-
-        if (event.shiftKey && event.key.toLowerCase() === 'y') {
-            event.preventDefault();
-            const selectedText = window.getSelection().toString().trim();
-            if (selectedText) { openYouglishPopup(selectedText); }
-        }
-        
-        if (event.shiftKey && event.key.toLowerCase() === 'h') {
-            event.preventDefault();
-            const selectedText = window.getSelection().toString().trim();
-            if (selectedText) { openGoogleImagesPopup(selectedText); }
-        }
-    });
-
-    // =================================================================
-    // =================== POPUP WINDOWS FUNCTIONALITY ===============
-    // =================================================================
-    function openYouglishPopup(word) {
-        const url = `https://youglish.com/pronounce/${encodeURIComponent(word)}/german`;
-        const windowFeatures = `width=${Math.round(window.screen.width * 0.4)},height=${Math.round(window.screen.height * 0.55)},scrollbars=yes,resizable=yes`;
-
-        if (youglishWindow && !youglishWindow.closed) {
-            youglishWindow.location.href = url;
-            youglishWindow.focus();
-        } else {
-            youglishWindow = window.open(url, "youglish_popup", windowFeatures);
-        }
-    }
-
-    function openGoogleImagesPopup(query) {
-        const url = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
-        const windowFeatures = `width=${Math.round(window.screen.width * 0.45)},height=${Math.round(window.screen.height * 0.7)},scrollbars=yes,resizable=yes`;
-        
-        if (googleImagesWindow && !googleImagesWindow.closed) {
-            googleImagesWindow.location.href = url;
-            googleImagesWindow.focus();
-        } else {
-            googleImagesWindow = window.open(url, "google_images_popup", windowFeatures);
-        }
-    }
+    // Toàn bộ phần code cho phím tắt và popup đã được xóa khỏi đây.
 
     // =================================================================
     // =================== INITIALIZATION ==============================
@@ -666,5 +599,6 @@
         questionCount = 0;
         addNewQuestion();
     };
-
 </script>
+</body>
+</html>
