@@ -135,6 +135,10 @@
             font-weight: bold;
             color: #333;
         }
+        /* CSS cho highlight */
+        .reading-highlight {
+            background-color: rgb(173, 216, 230); /* Màu xanh nhạt */
+        }
     </style>
 </head>
 <body>
@@ -189,6 +193,10 @@
     let questionCount = 0;
 
     let currentPlaybackRate = 1.0;
+    let isReading = false;
+    let currentUtterance = null;
+    let currentTextWords = []; // Lưu trữ các từ đã được tách
+    let currentOriginalText = ""; // Lưu trữ văn bản gốc để highlight chính xác
 
     const highlightColors = ["#ffff99", "#99ccff", "#ffcc99", "#ffcccb", "#ffb6c1", "#98fb98", "#dda0dd", "#c19a6b"];
     let currentColorIndex = 0;
@@ -279,24 +287,114 @@
         }
     }
 
-    // Hàm speak đã được điều chỉnh để làm sạch văn bản
+    // Hàm xóa highlight cũ
+    function removeHighlight() {
+        const highlightedSpans = document.querySelectorAll('.reading-highlight');
+        highlightedSpans.forEach(span => {
+            span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
+        });
+        // Sau khi replaceChild, có thể cần gộp các TextNode liền kề nếu có
+        document.getElementById('text-area').normalize();
+    }
+
+    // Hàm áp dụng highlight cho từ đang đọc
+    function applyHighlight(wordText, charIndex) {
+        removeHighlight(); // Xóa highlight cũ trước khi áp dụng cái mới
+        const textArea = document.getElementById('text-area');
+        const textContentOfTextArea = getTextContentOfTextArea(textArea); // Lấy văn bản thuần túy đã lọc
+
+        // Tìm vị trí của từ trong textContentOfTextArea
+        const actualIndex = textContentOfTextArea.indexOf(wordText, charIndex);
+
+        if (actualIndex === -1) {
+            // console.warn("Could not find word '" + wordText + "' for highlighting at charIndex " + charIndex);
+            return;
+        }
+
+        // Tạo range để highlight
+        const range = document.createRange();
+        let currentOffset = 0;
+        let startNode = null;
+        let endNode = null;
+        let startNodeOffset = 0;
+        let endNodeOffset = 0;
+
+        // Duyệt qua các TextNode đã lọc để tìm vị trí của từ
+        const walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
+        let node;
+        while ((node = walker.nextNode())) {
+            const nodeValue = node.nodeValue;
+            if (currentOffset + nodeValue.length > actualIndex && startNode === null) {
+                startNode = node;
+                startNodeOffset = actualIndex - currentOffset;
+            }
+            if (currentOffset + nodeValue.length >= actualIndex + wordText.length) {
+                endNode = node;
+                endNodeOffset = (actualIndex + wordText.length) - currentOffset;
+                break;
+            }
+            currentOffset += nodeValue.length;
+        }
+
+        if (startNode && endNode) {
+            try {
+                range.setStart(startNode, startNodeOffset);
+                range.setEnd(endNode, endNodeOffset);
+
+                const span = document.createElement('span');
+                span.className = 'reading-highlight';
+                range.surroundContents(span);
+            } catch (e) {
+                // console.error("Error applying highlight:", e);
+                // Xử lý các trường hợp ngoại lệ khi range không hợp lệ (ví dụ: cross-node selection)
+            }
+        }
+    }
+
+    // Hàm speak đã được điều chỉnh để làm sạch văn bản và xử lý highlight
     function speak(text) {
         speechSynthesis.cancel();
+        removeHighlight(); // Đảm bảo mọi highlight cũ bị xóa trước khi bắt đầu đọc mới
+
         // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác
         // Loại bỏ các cụm từ điều khiển của tiện ích
+        currentOriginalText = text; // Lưu trữ văn bản gốc để highlight chính xác trên DOM
         const cleanedText = text.replace(/[\u2500-\u25FF\u2B00-\u2BFF]/g, '')
                                 .replace(/Kiểm tra/g, '')
                                 .replace(/Gõ lại câu này/g, '')
-                                .replace(/Xóa\/Làm lại/g, '') // Thêm dòng này để loại bỏ "Xóa/Làm lại"
+                                .replace(/Xóa\/Làm lại/g, '')
                                 .replace(/\s+/g, ' ') // Thay thế nhiều khoảng trắng bằng một khoảng trắng duy nhất
                                 .trim();
-        if (!cleanedText) return; // Không đọc nếu không còn văn bản sau khi làm sạch
+        if (!cleanedText) {
+            isReading = false;
+            return;
+        }
 
-        const utterance = new SpeechSynthesisUtterance(cleanedText);
-        utterance.lang = 'de-DE';
-        if (germanTTSVoice) utterance.voice = germanTTSVoice;
-        utterance.rate = currentPlaybackRate;
-        speechSynthesis.speak(utterance);
+        currentUtterance = new SpeechSynthesisUtterance(cleanedText);
+        currentUtterance.lang = 'de-DE';
+        if (germanTTSVoice) currentUtterance.voice = germanTTSVoice;
+        currentUtterance.rate = currentPlaybackRate;
+
+        currentUtterance.onboundary = function(event) {
+            if (event.name === 'word') {
+                const word = currentUtterance.text.substring(event.charIndex, event.charIndex + event.charLength);
+                // Pass the original word text and its start index in the *cleaned* text
+                applyHighlight(word, event.charIndex);
+            }
+        };
+
+        currentUtterance.onstart = function() {
+            isReading = true;
+        };
+
+        currentUtterance.onend = function() {
+            isReading = false;
+            removeHighlight(); // Xóa highlight khi kết thúc đọc
+            currentUtterance = null;
+            currentOriginalText = "";
+        };
+
+        speechSynthesis.speak(currentUtterance);
     }
 
     function speakQuestion(index) {
@@ -566,7 +664,8 @@
             if (node.parentNode && (node.parentNode.classList.contains('script-checker-input') ||
                                    node.parentNode.classList.contains('script-checker-button') ||
                                    node.parentNode.classList.contains('script-checker-controls') ||
-                                   node.parentNode.classList.contains('masked-text-display'))) {
+                                   node.parentNode.classList.contains('masked-text-display') ||
+                                   node.parentNode.classList.contains('script-checker-clear-button'))) {
                 return NodeFilter.FILTER_REJECT; // Bỏ qua node này
             }
             // Loại bỏ các TextNode là khoảng trắng thuần túy (có thể do việc ẩn/xóa)
@@ -577,28 +676,149 @@
         }
     };
 
+    // Hàm getTextContentOfTextArea để lấy văn bản thuần túy đã lọc từ text-area
+    function getTextContentOfTextArea(textAreaElement) {
+        let textContent = '';
+        const walker = document.createTreeWalker(textAreaElement, NodeFilter.SHOW_TEXT, textNodeFilter, false);
+        let node;
+        while (node = walker.nextNode()) {
+            textContent += node.nodeValue;
+        }
+        return textContent;
+    }
+
+    // Hàm xóa highlight cũ
+    function removeHighlight() {
+        const highlightedSpans = document.querySelectorAll('.reading-highlight');
+        highlightedSpans.forEach(span => {
+            // Thay thế span highlight bằng TextNode chứa nội dung của nó
+            // Dùng TextNode(span.textContent) để đảm bảo không còn HTML markup
+            span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
+        });
+        // Sau khi replaceChild, có thể cần gộp các TextNode liền kề nếu có
+        document.getElementById('text-area').normalize(); // normalize() sẽ gộp các TextNode liền kề
+    }
+
+    // Hàm áp dụng highlight cho từ đang đọc
+    function applyHighlight(wordText, charIndexInCleanedText) {
+        removeHighlight(); // Xóa highlight cũ trước khi áp dụng cái mới
+
+        const textArea = document.getElementById('text-area');
+        // Lấy lại văn bản thuần túy đã lọc để đảm bảo chỉ số chính xác
+        const fullCleanedText = getTextContentOfTextArea(textArea);
+
+        // Tìm vị trí bắt đầu và kết thúc của từ trong văn bản thuần túy
+        const startIndex = charIndexInCleanedText;
+        const endIndex = charIndexInCleanedText + wordText.length;
+
+        // Tạo range để highlight
+        const range = document.createRange();
+        let currentOffset = 0;
+        let startNode = null;
+        let endNode = null;
+        let startNodeOffset = 0;
+        let endNodeOffset = 0;
+
+        // Duyệt qua các TextNode đã lọc để tìm vị trí của từ trong DOM thực tế
+        const walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
+        let node;
+        while ((node = walker.nextNode())) {
+            const nodeValue = node.nodeValue;
+
+            // Kiểm tra xem từ bắt đầu trong node hiện tại
+            if (currentOffset <= startIndex && (currentOffset + nodeValue.length) > startIndex && startNode === null) {
+                startNode = node;
+                startNodeOffset = startIndex - currentOffset;
+            }
+            // Kiểm tra xem từ kết thúc trong node hiện tại
+            if (currentOffset <= endIndex && (currentOffset + nodeValue.length) >= endIndex) {
+                endNode = node;
+                endNodeOffset = endIndex - currentOffset;
+                break; // Đã tìm thấy cả điểm bắt đầu và kết thúc
+            }
+            currentOffset += nodeValue.length;
+        }
+
+        if (startNode && endNode) {
+            try {
+                range.setStart(startNode, startNodeOffset);
+                range.setEnd(endNode, endNodeOffset);
+
+                const span = document.createElement('span');
+                span.className = 'reading-highlight';
+                range.surroundContents(span);
+            } catch (e) {
+                // Xử lý các trường hợp ngoại lệ khi range không hợp lệ (ví dụ: cross-node selection)
+                // console.error("Error applying highlight:", e, "Word:", wordText, "StartNode:", startNode, "EndNode:", endNode);
+                removeHighlight(); // Đảm bảo highlight không bị kẹt nếu có lỗi
+            }
+        }
+    }
+
+
+    // Hàm speak đã được điều chỉnh để làm sạch văn bản và xử lý highlight
+    function speak(text) {
+        speechSynthesis.cancel();
+        removeHighlight(); // Đảm bảo mọi highlight cũ bị xóa trước khi bắt đầu đọc mới
+
+        // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác
+        // Loại bỏ các cụm từ điều khiển của tiện ích
+        // Đặt currentOriginalText để hàm applyHighlight có thể tham chiếu đến văn bản gốc chưa bị cắt
+        // Tuy nhiên, hàm applyHighlight hiện tại chỉ dùng `currentUtterance.text`
+        // Do đó, `currentOriginalText` không cần thiết cho mục đích highlight
+        const cleanedText = text.replace(/[\u2500-\u25FF\u2B00-\u2BFF]/g, '')
+                                .replace(/Kiểm tra/g, '')
+                                .replace(/Gõ lại câu này/g, '')
+                                .replace(/Xóa\/Làm lại/g, '')
+                                .replace(/\s+/g, ' ') // Thay thế nhiều khoảng trắng bằng một khoảng trắng duy nhất
+                                .trim();
+        if (!cleanedText) {
+            isReading = false;
+            return;
+        }
+
+        currentUtterance = new SpeechSynthesisUtterance(cleanedText);
+        currentUtterance.lang = 'de-DE';
+        if (germanTTSVoice) currentUtterance.voice = germanTTSVoice;
+        currentUtterance.rate = currentPlaybackRate;
+
+        currentUtterance.onboundary = function(event) {
+            if (event.name === 'word') {
+                const word = currentUtterance.text.substring(event.charIndex, event.charIndex + event.charLength);
+                applyHighlight(word, event.charIndex);
+            }
+        };
+
+        currentUtterance.onstart = function() {
+            isReading = true;
+        };
+
+        currentUtterance.onend = function() {
+            isReading = false;
+            removeHighlight(); // Xóa highlight khi kết thúc đọc
+            currentUtterance = null;
+        };
+
+        speechSynthesis.speak(currentUtterance);
+    }
+
+    // --- Các EventListener cho nút đọc ---
+
     document.getElementById("text-area").addEventListener("mouseup", function () {
         setTimeout(() => {
             let selectedText = window.getSelection().toString().trim();
             // Lọc bỏ cụm "Kiểm tra" và các ký tự khối nếu chúng vô tình lọt vào selection
-            selectedText = selectedText.replace(/Kiểm tra/g, '').replace(/Gõ lại câu này/g, '').trim();
-            speak(selectedText); // Hàm speak sẽ tự động làm sạch
+            selectedText = selectedText.replace(/Kiểm tra/g, '').replace(/Gõ lại câu này/g, '').replace(/Xóa\/Làm lại/g, '').trim();
+            speak(selectedText); // Hàm speak sẽ tự động làm sạch và highlight
         }, 100);
     });
 
     document.getElementById("read-all").addEventListener("click", function () {
         const textArea = document.getElementById("text-area");
-        let fullTextToSpeak = '';
-
-        // Sử dụng TreeWalker với bộ lọc tùy chỉnh để chỉ lấy văn bản gốc
-        const walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
-        let currentNode;
-        while (currentNode = walker.nextNode()) {
-            fullTextToSpeak += currentNode.nodeValue;
-        }
+        let fullTextToSpeak = getTextContentOfTextArea(textArea); // Sử dụng hàm mới để lấy văn bản sạch
 
         if (fullTextToSpeak && fullTextToSpeak.trim() !== 'Paste text here...') {
-            speak(fullTextToSpeak); // Hàm speak đã có logic làm sạch ký tự khối
+            speak(fullTextToSpeak); // Hàm speak đã có logic làm sạch ký tự khối và highlight
         } else {
             alert("There is no text to read!");
         }
@@ -616,12 +836,8 @@
         const range = selection.getRangeAt(0);
 
         // Lấy toàn bộ văn bản thuần túy của text-area bằng cách duyệt qua các TextNode với bộ lọc
-        let fullTextNodes = '';
-        const walkerAll = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
-        let node;
-        while (node = walkerAll.nextNode()) {
-            fullTextNodes += node.nodeValue;
-        }
+        let fullTextNodes = getTextContentOfTextArea(textArea);
+
 
         // Tính toán vị trí con trỏ trong toàn bộ văn bản thuần túy đã được lọc
         let offsetInFilteredText = 0;
@@ -701,7 +917,7 @@
         let sentenceToRead = fullTextNodes.substring(sentenceStart, sentenceEnd).trim();
 
         if (sentenceToRead) {
-            speak(sentenceToRead); // Hàm speak sẽ tự động làm sạch
+            speak(sentenceToRead); // Hàm speak sẽ tự động làm sạch và highlight
         } else {
             alert("Không tìm thấy câu để đọc tại vị trí con trỏ.");
         }
