@@ -558,6 +558,7 @@
     const textNodeFilter = {
         acceptNode: function(node) {
             // Loại bỏ các TextNode bên trong các phần tử của tiện ích
+            // (input, button, và wrapper của chúng)
             if (node.parentNode && (node.parentNode.classList.contains('script-checker-input') ||
                                    node.parentNode.classList.contains('script-checker-button') ||
                                    node.parentNode.classList.contains('script-checker-controls') ||
@@ -574,10 +575,9 @@
 
     document.getElementById("text-area").addEventListener("mouseup", function () {
         setTimeout(() => {
-            // Lấy selection và làm sạch trước khi đọc
-            // Note: window.getSelection().toString() có thể vẫn lấy được text của input/button nếu chúng nằm trong selection
-            // Tuy nhiên, hàm speak đã có bộ lọc ký tự khối, và tốt nhất là cố gắng chọn chỉ văn bản gốc
             let selectedText = window.getSelection().toString().trim();
+            // Lọc bỏ cụm "Kiểm tra" và các ký tự khối nếu chúng vô tình lọt vào selection
+            selectedText = selectedText.replace(/Kiểm tra/g, '').replace(/Gõ lại câu này/g, '').trim();
             speak(selectedText); // Hàm speak sẽ tự động làm sạch
         }, 100);
     });
@@ -621,53 +621,40 @@
 
         // Tính toán vị trí con trỏ trong toàn bộ văn bản thuần túy đã được lọc
         let offsetInFilteredText = 0;
-        const walkerCursor = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
-        let currentNodeCursor;
-        let foundCursorNode = false;
-
-        // Vị trí thực tế của con trỏ trong văn bản đã được lọc
         let tempOffset = 0;
         let foundOffset = false;
-        let currentWalkerNode;
         const tempWalker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, textNodeFilter, false);
+        let currentWalkerNode;
 
         while(currentWalkerNode = tempWalker.nextNode()) {
-            // Kiểm tra xem range.startContainer có phải là currentWalkerNode không
             if (currentWalkerNode === range.startContainer) {
                 offsetInFilteredText = tempOffset + range.startOffset;
                 foundOffset = true;
                 break;
             }
-            // Kiểm tra xem range.startContainer có nằm trong cùng một 'mainSpan' (script-checker-wrapper)
-            // hoặc một phần tử ẩn của tiện ích mà currentWalkerNode đại diện cho văn bản gốc của nó không
-            if (range.startContainer.parentNode && range.startContainer.parentNode.closest('.script-checker-wrapper')) {
-                // Nếu range.startContainer là một phần của tiện ích, chúng ta cần tìm hidden-original-text tương ứng
-                let originalTextParent = range.startContainer.parentNode.closest('.script-checker-wrapper').querySelector('.hidden-original-text');
-                if (originalTextParent && originalTextParent.firstChild === currentWalkerNode) {
-                    offsetInFilteredText = tempOffset + range.startOffset; // Vị trí trong TextNode của hidden-original-text
-                    foundOffset = true;
-                    break;
-                }
-            }
-
             tempOffset += currentWalkerNode.nodeValue.length;
         }
-        // Fallback nếu không tìm thấy vị trí chính xác (ví dụ, con trỏ ở cuối một phần tử không có TextNode)
+        // Fallback nếu không tìm thấy vị trí chính xác trong text nodes (ví dụ, con trỏ ở cạnh phần tử)
         if (!foundOffset) {
-             offsetInFilteredText = range.startOffset; // Vị trí cơ bản
-             let currentElement = range.startContainer;
-             while (currentElement && currentElement !== textArea) {
-                 let prevSibling = currentElement.previousSibling;
-                 while (prevSibling) {
-                     const sibWalker = document.createTreeWalker(prevSibling, NodeFilter.SHOW_TEXT, textNodeFilter, false);
-                     let sibNode;
-                     while (sibNode = sibWalker.nextNode()) {
-                         offsetInFilteredText += sibNode.nodeValue.length;
-                     }
-                     prevSibling = prevSibling.previousSibling;
+            // Cố gắng tính toán vị trí dựa trên node trước đó
+            let prevNode = range.startContainer.previousSibling;
+            while(prevNode) {
+                const prevNodeWalker = document.createTreeWalker(prevNode, NodeFilter.SHOW_TEXT, textNodeFilter, false);
+                let prevTextNode;
+                while(prevTextNode = prevNodeWalker.nextNode()) {
+                    offsetInFilteredText += prevTextNode.nodeValue.length;
+                }
+                prevNode = prevNode.previousSibling;
+            }
+            // Thêm offset từ node hiện tại nếu nó là một phần tử có thể chứa văn bản (ví dụ, script-checker-wrapper)
+            if (range.startContainer.nodeType === Node.ELEMENT_NODE) {
+                 const originalHidden = range.startContainer.querySelector('.hidden-original-text');
+                 if (originalHidden) {
+                     offsetInFilteredText += originalHidden.textContent.length;
                  }
-                 currentElement = currentElement.parentNode;
-             }
+            } else if (range.startContainer.nodeType === Node.TEXT_NODE) {
+                offsetInFilteredText += range.startOffset; // Vị trí trong TextNode của chính nó
+            }
         }
 
 
