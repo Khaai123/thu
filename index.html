@@ -282,10 +282,14 @@
     // Hàm speak đã được điều chỉnh để làm sạch văn bản
     function speak(text) {
         speechSynthesis.cancel();
-        // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác, thay thế nhiều khoảng trắng bằng một
-        // Regex này sẽ tìm và loại bỏ các ký tự trong các dải Unicode của Block Elements và Geometric Shapes,
-        // nơi các ký tự "█" thường nằm.
-        const cleanedText = text.replace(/[\u2500-\u25FF\u2B00-\u2BFF]/g, '').replace(/\s+/g, ' ').trim();
+        // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác
+        // Loại bỏ các cụm từ điều khiển của tiện ích
+        const cleanedText = text.replace(/[\u2500-\u25FF\u2B00-\u2BFF]/g, '')
+                                .replace(/Kiểm tra/g, '')
+                                .replace(/Gõ lại câu này/g, '')
+                                .replace(/Xóa\/Làm lại/g, '') // Thêm dòng này để loại bỏ "Xóa/Làm lại"
+                                .replace(/\s+/g, ' ') // Thay thế nhiều khoảng trắng bằng một khoảng trắng duy nhất
+                                .trim();
         if (!cleanedText) return; // Không đọc nếu không còn văn bản sau khi làm sạch
 
         const utterance = new SpeechSynthesisUtterance(cleanedText);
