@@ -283,7 +283,7 @@
     function speak(text) {
         speechSynthesis.cancel();
         // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác, thay thế nhiều khoảng trắng bằng một
-        const cleanedText = text.replace(/[\u2580-\u259F\u2B00-\u2BFF]/g, '').replace(/\s+/g, ' ').trim();
+        const cleanedText = text.replace(/[\u2500-\u25FF\u2B00-\u2BFF]/g, '').replace(/\s+/g, ' ').trim();
         if (!cleanedText) return; // Không đọc nếu không còn văn bản sau khi làm sạch
 
         const utterance = new SpeechSynthesisUtterance(cleanedText);
@@ -559,13 +559,19 @@
     });
 
     document.getElementById("read-all").addEventListener("click", function () {
-        // Lấy toàn bộ nội dung văn bản thuần túy từ text-area
-        // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác
-        const fullText = document.getElementById("text-area").textContent;
-        const cleanedFullText = fullText.replace(/[\u2580-\u259F\u2B00-\u2BFF]/g, '').replace(/\s+/g, ' ').trim();
+        const textArea = document.getElementById("text-area");
+        let fullTextToSpeak = '';
 
-        if (cleanedFullText && cleanedFullText !== 'Paste text here...') {
-            speak(cleanedFullText);
+        // Duyệt qua tất cả các TextNode bên trong #text-area để đảm bảo lấy được văn bản gốc
+        // và bỏ qua các phần tử HTML như input/button của tiện ích.
+        const walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, null, false);
+        let currentNode;
+        while (currentNode = walker.nextNode()) {
+            fullTextToSpeak += currentNode.nodeValue;
+        }
+
+        if (fullTextToSpeak && fullTextToSpeak.trim() !== 'Paste text here...') {
+            speak(fullTextToSpeak); // Hàm speak sẽ tự động làm sạch các ký tự khối
         } else {
             alert("There is no text to read!");
         }
@@ -581,41 +587,45 @@
         }
 
         const range = selection.getRangeAt(0);
-        const fullText = textArea.textContent; // Lấy toàn bộ văn bản gốc trong text-area
-        let cursorPosition = range.startOffset;
-        let containerNode = range.startContainer;
 
-        // Tính toán vị trí con trỏ trong textContent tổng thể của textArea
-        let offsetInTextArea = 0;
-        let walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT);
-        let found = false;
+        // Lấy toàn bộ văn bản thuần túy của text-area bằng cách duyệt qua các TextNode
+        let fullTextNodes = '';
+        const walkerAll = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, null, false);
+        let node;
+        while (node = walkerAll.nextNode()) {
+            fullTextNodes += node.nodeValue;
+        }
 
-        while(walker.nextNode()) {
-            if (walker.currentNode === containerNode) {
-                offsetInTextArea += cursorPosition;
-                found = true;
+        // Tính toán vị trí con trỏ trong toàn bộ văn bản thuần túy
+        let offsetInCleanedText = 0;
+        const walkerCursor = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT, null, false);
+        let currentNodeCursor;
+        let foundCursorNode = false;
+
+        while(currentNodeCursor = walkerCursor.nextNode()) {
+            if (currentNodeCursor === range.startContainer) {
+                offsetInCleanedText += range.startOffset;
+                foundCursorNode = true;
                 break;
             }
-            if (walker.currentNode.nodeType === Node.TEXT_NODE) {
-                offsetInTextArea += walker.currentNode.length;
-            }
+            offsetInCleanedText += currentNodeCursor.nodeValue.length;
         }
-        // Fallback nếu không tìm thấy chính xác trong text nodes (ví dụ, con trỏ ở cuối một phần tử)
-        if (!found) {
-            offsetInTextArea = range.startOffset; // Vị trí trong node chứa con trỏ
-            let tempNode = containerNode;
+
+        // Fallback nếu không tìm thấy chính xác (ví dụ, con trỏ ở cuối một phần tử)
+        if (!foundCursorNode) {
+            offsetInCleanedText = range.startOffset; // Vị trí trong node chứa con trỏ
+            let tempNode = range.startContainer;
             while(tempNode && tempNode !== textArea) {
                 let sibling = tempNode.previousSibling;
                 while(sibling) {
                     if (sibling.nodeType === Node.TEXT_NODE) {
-                        offsetInTextArea += sibling.length;
+                        offsetInCleanedText += sibling.length;
                     } else if (sibling.nodeType === Node.ELEMENT_NODE) {
-                         // Đối với các phần tử do tiện ích tạo ra, lấy textContent của phần tử ẩn
-                         const hiddenElement = sibling.querySelector('.hidden-original-text');
-                         if (hiddenElement) {
-                             offsetInTextArea += hiddenElement.textContent.length;
+                         const originalHidden = sibling.querySelector('.hidden-original-text');
+                         if (originalHidden) {
+                             offsetInCleanedText += originalHidden.textContent.length;
                          } else {
-                             offsetInTextArea += sibling.textContent.length;
+                             offsetInCleanedText += sibling.textContent.length;
                          }
                     }
                     sibling = sibling.previousSibling;
@@ -626,9 +636,9 @@
 
 
         // Tìm điểm bắt đầu của câu
-        let sentenceStart = offsetInTextArea;
+        let sentenceStart = offsetInCleanedText;
         while (sentenceStart > 0) {
-            const char = fullText[sentenceStart - 1];
+            const char = fullTextNodes[sentenceStart - 1];
             // Các dấu câu kết thúc câu: ., ?, ! (và dấu xuống dòng)
             if (char === '.' || char === '?' || char === '!' || char === '\n') {
                 break;
@@ -636,15 +646,15 @@
             sentenceStart--;
         }
         // Bỏ qua khoảng trắng hoặc dấu câu đầu câu
-        while (sentenceStart < fullText.length && (fullText[sentenceStart] === ' ' || fullText[sentenceStart] === '\n' || fullText[sentenceStart].match(/[.,?!]/))) {
+        while (sentenceStart < fullTextNodes.length && (fullTextNodes[sentenceStart] === ' ' || fullTextNodes[sentenceStart] === '\n' || fullTextNodes[sentenceStart].match(/[.,?!]/))) {
             sentenceStart++;
         }
 
 
         // Tìm điểm kết thúc của câu
-        let sentenceEnd = offsetInTextArea;
-        while (sentenceEnd < fullText.length) {
-            const char = fullText[sentenceEnd];
+        let sentenceEnd = offsetInCleanedText;
+        while (sentenceEnd < fullTextNodes.length) {
+            const char = fullTextNodes[sentenceEnd];
             // Các dấu câu kết thúc câu: ., ?, ! (và dấu xuống dòng)
             if (char === '.' || char === '?' || char === '!' || char === '\n') {
                 // Nếu là dấu câu, bao gồm cả nó trong câu
@@ -654,17 +664,17 @@
             sentenceEnd++;
         }
         // Nếu câu kết thúc ở cuối văn bản mà không có dấu câu
-        if (sentenceEnd === fullText.length && sentenceEnd > sentenceStart) {
+        if (sentenceEnd === fullTextNodes.length && sentenceEnd > sentenceStart) {
             // Không làm gì, sentenceEnd đã đúng
-        } else if (sentenceEnd === fullText.length && sentenceEnd === sentenceStart) {
+        } else if (sentenceEnd === fullTextNodes.length && sentenceEnd === sentenceStart) {
              // Trường hợp chỉ có dấu câu hoặc khoảng trắng ở cuối
-             sentenceEnd = fullText.length;
+             sentenceEnd = fullTextNodes.length;
         }
 
-        let sentenceToRead = fullText.substring(sentenceStart, sentenceEnd).trim();
+        let sentenceToRead = fullTextNodes.substring(sentenceStart, sentenceEnd).trim();
 
         if (sentenceToRead) {
-            speak(sentenceToRead);
+            speak(sentenceToRead); // Hàm speak sẽ tự động làm sạch
         } else {
             alert("Không tìm thấy câu để đọc tại vị trí con trỏ.");
         }
@@ -695,7 +705,6 @@
     // =================================================================
     // =========== KEYBOARD SHORTCUTS & POPUPS ARE REMOVED ===========
     // =================================================================
-    // Toàn bộ phần code cho phím tắt và popup đã được xóa khỏi đây.
 
     // =================================================================
     // =================== INITIALIZATION ==============================
