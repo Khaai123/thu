@@ -195,7 +195,7 @@
     let currentPlaybackRate = 1.0;
     let isReading = false;
     let currentUtterance = null;
-    let originalTextAreaContent = ""; // Lưu trữ HTML gốc của text-area
+    // Đã xóa biến 'originalTextAreaContent' không cần thiết
 
     const highlightColors = ["#ffff99", "#99ccff", "#ffcc99", "#ffcccb", "#ffb6c1", "#98fb98", "#dda0dd", "#c19a6b"];
     let currentColorIndex = 0;
@@ -290,8 +290,8 @@
         if (isReading) {
             speechSynthesis.cancel();
         }
-        removeHighlight();
-        originalTextAreaContent = document.getElementById('text-area').innerHTML;
+        removeHighlight(); // Gọi hàm removeHighlight đã được sửa lỗi
+        // Đã xóa dòng gán 'originalTextAreaContent'
         const cleanedText = text.replace(/[\u2500-\u25FF\u2B00-\u2BFF]/g, '')
                                 .replace(/Kiểm tra/g, '')
                                 .replace(/Gõ lại câu này/g, '')
@@ -319,7 +319,7 @@
             isReading = false;
             removeHighlight();
             currentUtterance = null;
-            originalTextAreaContent = "";
+             // Đã xóa dòng reset 'originalTextAreaContent'
         };
         speechSynthesis.speak(currentUtterance);
     }
@@ -609,18 +609,21 @@
         return textContent;
     }
 
+    // ========== HÀM ĐÃ SỬA LỖI (BƯỚC 2) ==========
     function removeHighlight() {
         const textArea = document.getElementById('text-area');
-        if (originalTextAreaContent) {
-            textArea.innerHTML = originalTextAreaContent;
-        } else {
-            const highlightedSpans = textArea.querySelectorAll('.reading-highlight');
-            highlightedSpans.forEach(span => {
-                span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
-            });
-            textArea.normalize();
-        }
+        // Luôn tìm tất cả các span highlight hiện có
+        const highlightedSpans = textArea.querySelectorAll('.reading-highlight');
+        
+        // Thay thế mỗi span bằng chính nội dung text của nó (gỡ bỏ tag span)
+        highlightedSpans.forEach(span => {
+            span.parentNode.replaceChild(document.createTextNode(span.textContent), span);
+        });
+
+        // Gộp các nút văn bản liền kề lại để DOM sạch sẽ
+        textArea.normalize();
     }
+
 
     function applyHighlight(wordText, charIndexInCleanedText) {
         removeHighlight();
@@ -670,11 +673,20 @@
 
     // --- Các EventListener cho nút đọc ---
 
+    // ========== HÀM ĐÃ SỬA LỖI (BƯỚC 1) ==========
     document.getElementById("text-area").addEventListener("mouseup", function () {
         setTimeout(() => {
-            let selectedText = window.getSelection().toString().trim();
-            selectedText = selectedText.replace(/Kiểm tra/g, '').replace(/Gõ lại câu này/g, '').replace(/Xóa\/Làm lại/g, '').trim();
-            speak(selectedText);
+            const selection = window.getSelection();
+            // Chỉ thực hiện khi người dùng bôi đen văn bản (selection không phải là một điểm)
+            if (selection.isCollapsed) {
+                return; // Nếu là click chuột đơn thuần, không làm gì cả.
+            }
+
+            let selectedText = selection.toString().trim();
+            if (selectedText) {
+                selectedText = selectedText.replace(/Kiểm tra/g, '').replace(/Gõ lại câu này/g, '').replace(/Xóa\/Làm lại/g, '').trim();
+                speak(selectedText);
+            }
         }, 100);
     });
 
@@ -688,7 +700,6 @@
         }
     });
 
-    // ========== HÀM ĐÃ SỬA LỖI HOÀN CHỈNH ==========
     document.getElementById("read-current-sentence").addEventListener("click", function() {
         const textArea = document.getElementById('text-area');
         const selection = window.getSelection();
@@ -700,24 +711,16 @@
 
         const range = selection.getRangeAt(0);
 
-        // --- LOGIC TÍNH OFFSET MỚI, ROBUST HƠN ---
-        // Tạo một range từ đầu text area đến vị trí con trỏ
         const preCursorRange = document.createRange();
-        preCursorRange.selectNodeContents(textArea); // Chọn toàn bộ nội dung
-        preCursorRange.setEnd(range.startContainer, range.startOffset); // Đặt điểm cuối là vị trí con trỏ
+        preCursorRange.selectNodeContents(textArea);
+        preCursorRange.setEnd(range.startContainer, range.startOffset);
 
-        // Clone nội dung trước con trỏ vào một div tạm để xử lý
         const tempDiv = document.createElement('div');
         tempDiv.appendChild(preCursorRange.cloneContents());
 
-        // Chạy hàm làm sạch văn bản trên div tạm và lấy độ dài
-        // Đây là cách chính xác nhất để có được vị trí con trỏ trong văn bản đã được lọc
         const offsetInFilteredText = getTextContentOfTextArea(tempDiv).length;
-        // --- KẾT THÚC LOGIC TÍNH OFFSET MỚI ---
-
         const fullTextNodes = getTextContentOfTextArea(textArea);
 
-        // Tìm điểm bắt đầu của câu
         let sentenceStart = offsetInFilteredText;
         while (sentenceStart > 0) {
             const char = fullTextNodes[sentenceStart - 1];
@@ -730,7 +733,6 @@
             sentenceStart++;
         }
 
-        // Tìm điểm kết thúc của câu
         let sentenceEnd = offsetInFilteredText;
         while (sentenceEnd < fullTextNodes.length) {
             const char = fullTextNodes[sentenceEnd];
@@ -744,7 +746,6 @@
         let sentenceToRead = fullTextNodes.substring(sentenceStart, sentenceEnd).trim();
 
         if (sentenceToRead) {
-            // Truyền vào câu và vị trí bắt đầu của nó (đã được tính toán chính xác)
             speak(sentenceToRead, sentenceStart);
         } else {
             alert("Không tìm thấy câu để đọc tại vị trí con trỏ.");
