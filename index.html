@@ -166,7 +166,6 @@
             </div>
             <button id="read-all">🔊 Read All Text</button>
             <button id="read-hidden-text-button">🔊 Read Hidden Text</button> <button id="highlight-button">🎨 Highlight</button>
-            <button id="highlight-button">🎨 Highlight</button>
             <button id="remove-highlight-button">🗑️ Xóa Highlight</button>
         </div>
     </div>
@@ -187,7 +186,7 @@
     let currentAnswerIndex = null;
     let currentAudioIndex = null;
     let questionCount = 0;
-    
+
     let currentPlaybackRate = 1.0;
 
     const highlightColors = ["#ffff99", "#99ccff", "#ffcc99", "#ffcccb", "#ffb6c1", "#98fb98", "#dda0dd", "#c19a6b"];
@@ -292,7 +291,7 @@
         const text = document.querySelector(`.question-block[data-index="${index}"] .question-text`).textContent;
         speak(text);
     }
-    
+
     function addNewQuestion() {
         const container = document.getElementById('questions-container');
         const index = questionCount;
@@ -457,7 +456,7 @@
         for (let i = 0; i <= cleanS1.length; i++) {
             let lastValue = i;
             for (let j = 0; j <= cleanS2.length; j++) {
-                if (i == 0) { costs[j] = j; } 
+                if (i == 0) { costs[j] = j; }
                 else {
                     if (j > 0) {
                         let newValue = costs[j - 1];
@@ -526,7 +525,7 @@
         if (!userAnswer) { alert("Vui lòng ghi âm hoặc nhập câu trả lời trước khi chấm điểm."); return; }
         const distance = levenshteinDistance(modelAnswer, userAnswer);
         const longerLength = Math.max(modelAnswer.length, userAnswer.length);
-        if (longerLength === 0) { scoreDisplay.textContent = "Score: 100%"; } 
+        if (longerLength === 0) { scoreDisplay.textContent = "Score: 100%"; }
         else {
              const similarity = (1 - (distance / longerLength)) * 100;
              scoreDisplay.textContent = `Score: ${Math.round(similarity)}%`;
@@ -546,89 +545,71 @@
     // =================================================================
     // ================= TEXT READER (RIGHT PANEL) LOGIC =================
     // =================================================================
-    
-        document.getElementById("text-area").addEventListener("mouseup", function () {
-            setTimeout(() => {
-                const selectedText = window.getSelection().toString().trim();
-                if (selectedText) { speak(selectedText); }
-            }, 100);
-        });
+    document.getElementById("text-area").addEventListener("mouseup", function () {
+        setTimeout(() => {
+            const selectedText = window.getSelection().toString().trim();
+            if (selectedText) { speak(selectedText); }
+        }, 100);
+    });
 
-        document.getElementById("read-all").addEventListener("click", function () {
-            const fullText = document.getElementById("text-area").innerText.trim();
-            if (fullText && fullText !== 'Paste text here...') {
-                speak(fullText);
-            } else {
-                alert("There is no text to read!");
-            }
-        });
+    document.getElementById("read-all").addEventListener("click", function () {
+        const fullText = document.getElementById("text-area").innerText.trim();
+        if (fullText && fullText !== 'Paste text here...') {
+            speak(fullText);
+        } else {
+            alert("There is no text to read!");
+        }
+    });
 
-        // Dán đoạn mã xử lý nút "Read Hidden Text" vào đây:
-        document.getElementById("read-hidden-text-button").addEventListener("click", function() {
-            const selection = window.getSelection();
-            if (!selection.rangeCount || selection.isCollapsed) {
-                alert("Vui lòng chọn vùng văn bản đã ẩn (các ký tự █) để nghe.");
-                return;
-            }
-
-            const selectedNode = selection.anchorNode;
-            // Tìm đến phần tử cha chứa lớp 'masked-text-display' (được tiện ích tạo ra)
-            let parentSpan = selectedNode.parentNode;
-            while(parentSpan && !parentSpan.classList.contains('masked-text-display') && parentSpan.nodeName !== 'BODY') {
-                parentSpan = parentSpan.parentNode;
-            }
-
-            if (parentSpan && parentSpan.parentNode && parentSpan.parentNode.querySelector('.hidden-original-text')) {
-                const originalTextElement = parentSpan.parentNode.querySelector('.hidden-original-text');
-                if (originalTextElement && originalTextElement.textContent.trim()) {
-                    speak(originalTextElement.textContent.trim());
-                } else {
-                    alert("Không tìm thấy văn bản gốc để đọc trong vùng chọn này.");
-                }
-            } else {
-                alert("Vui lòng chọn vùng văn bản đã ẩn (các ký tự █) để nghe.");
-            }
-        });
+    // JavaScript cho nút "🔊 Read Hidden Text" (đã sửa đổi để đọc văn bản được chọn)
+    document.getElementById("read-hidden-text-button").addEventListener("click", function() {
+        const selectedText = window.getSelection().toString().trim(); // Lấy văn bản được chọn
+        if (selectedText) { // Kiểm tra nếu có văn bản được chọn
+            speak(selectedText); // Đọc văn bản đó
+        } else {
+            alert("Vui lòng tô đen đoạn văn bản bạn muốn nghe."); // Thông báo nếu không có gì được chọn
+        }
+    });
 
 
-        document.getElementById("highlight-button").addEventListener("click", function () {
-            const selection = window.getSelection();
-            if (!selection.rangeCount || selection.isCollapsed) return;
-            const color = highlightColors[currentColorIndex];
-            document.execCommand('backColor', false, color);
-            currentColorIndex = (currentColorIndex + 1) % highlightColors.length;
-        });
+    document.getElementById("highlight-button").addEventListener("click", function () {
+        const selection = window.getSelection();
+        if (!selection.rangeCount || selection.isCollapsed) return;
+        const color = highlightColors[currentColorIndex];
+        document.execCommand('backColor', false, color);
+        currentColorIndex = (currentColorIndex + 1) % highlightColors.length;
+    });
 
-        document.getElementById("remove-highlight-button").addEventListener("click", function () {
-            const selection = window.getSelection();
-            if (!selection.rangeCount || selection.isCollapsed) return;
-            document.execCommand('backColor', false, 'transparent');
-        });
+    document.getElementById("remove-highlight-button").addEventListener("click", function () {
+        const selection = window.getSelection();
+        if (!selection.rangeCount || selection.isCollapsed) return;
+        document.execCommand('backColor', false, 'transparent');
+    });
 
-        const speedSlider = document.getElementById('speed-slider');
-        const speedValue = document.getElementById('speed-value');
-        speedSlider.addEventListener('input', function() {
-            currentPlaybackRate = parseFloat(this.value);
-            speedValue.textContent = `${currentPlaybackRate.toFixed(1)}x`;
-        });
+    const speedSlider = document.getElementById('speed-slider');
+    const speedValue = document.getElementById('speed-value');
+    speedSlider.addEventListener('input', function() {
+        currentPlaybackRate = parseFloat(this.value);
+        speedValue.textContent = `${currentPlaybackRate.toFixed(1)}x`;
+    });
 
-        // =================================================================
-        // =========== KEYBOARD SHORTCUTS & POPUPS ARE REMOVED ===========
-        // =================================================================
-        // ... (phần này rỗng theo file của bạn)
+    // =================================================================
+    // =========== KEYBOARD SHORTCUTS & POPUPS ARE REMOVED ===========
+    // =================================================================
+    // Toàn bộ phần code cho phím tắt và popup đã được xóa khỏi đây.
 
-        // =================================================================
-        // =================== INITIALIZATION ==============================
-        // =================================================================
-        window.onload = () => {
-            if (speechSynthesis.onvoiceschanged !== undefined) {
-                speechSynthesis.onvoiceschanged = initializeVoices;
-            }
-            initializeVoices();
-            document.getElementById("questions-container").innerHTML = '';
-            questionCount = 0;
-            addNewQuestion();
-        };
-    </script>
+    // =================================================================
+    // =================== INITIALIZATION ==============================
+    // =================================================================
+    window.onload = () => {
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = initializeVoices;
+        }
+        initializeVoices();
+        document.getElementById("questions-container").innerHTML = '';
+        questionCount = 0;
+        addNewQuestion();
+    };
+</script>
 </body>
 </html>
