@@ -165,7 +165,8 @@
                 <span id="speed-value">1.0x</span>
             </div>
             <button id="read-all">🔊 Read All Text</button>
-            <button id="read-current-sentence">🔊 Read Current Sentence</button> <button id="highlight-button">🎨 Highlight</button>
+            <button id="read-current-sentence">🔊 Read Current Sentence</button>
+            <button id="highlight-button">🎨 Highlight</button>
             <button id="remove-highlight-button">🗑️ Xóa Highlight</button>
         </div>
     </div>
@@ -278,9 +279,14 @@
         }
     }
 
+    // Hàm speak đã được điều chỉnh để làm sạch văn bản
     function speak(text) {
         speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(text);
+        // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác, thay thế nhiều khoảng trắng bằng một
+        const cleanedText = text.replace(/[\u2580-\u259F\u2B00-\u2BFF]/g, '').replace(/\s+/g, ' ').trim();
+        if (!cleanedText) return; // Không đọc nếu không còn văn bản sau khi làm sạch
+
+        const utterance = new SpeechSynthesisUtterance(cleanedText);
         utterance.lang = 'de-DE';
         if (germanTTSVoice) utterance.voice = germanTTSVoice;
         utterance.rate = currentPlaybackRate;
@@ -553,10 +559,13 @@
     });
 
     document.getElementById("read-all").addEventListener("click", function () {
-        // Lấy toàn bộ nội dung văn bản thuần túy từ text-area, bao gồm cả phần ẩn
-        const fullText = document.getElementById("text-area").textContent.trim();
-        if (fullText && fullText !== 'Paste text here...') {
-            speak(fullText);
+        // Lấy toàn bộ nội dung văn bản thuần túy từ text-area
+        // Loại bỏ các ký tự "█" và các ký tự khối Unicode khác
+        const fullText = document.getElementById("text-area").textContent;
+        const cleanedFullText = fullText.replace(/[\u2580-\u259F\u2B00-\u2BFF]/g, '').replace(/\s+/g, ' ').trim();
+
+        if (cleanedFullText && cleanedFullText !== 'Paste text here...') {
+            speak(cleanedFullText);
         } else {
             alert("There is no text to read!");
         }
@@ -576,10 +585,8 @@
         let cursorPosition = range.startOffset;
         let containerNode = range.startContainer;
 
-        // Xử lý trường hợp con trỏ nằm trong hidden-original-text hoặc masked-text-display
-        // Cần tìm chỉ mục tổng thể của con trỏ trong toàn bộ textContent của textArea
+        // Tính toán vị trí con trỏ trong textContent tổng thể của textArea
         let offsetInTextArea = 0;
-        let currentNode = textArea;
         let walker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT);
         let found = false;
 
@@ -593,60 +600,30 @@
                 offsetInTextArea += walker.currentNode.length;
             }
         }
-        // Nếu không tìm thấy hoặc con trỏ ở cuối
-        if (!found && containerNode === textArea) {
-             offsetInTextArea = cursorPosition; // Con trỏ nằm trực tiếp trong text-area
-        } else if (!found) {
-            // Nếu con trỏ nằm trong một span do tiện ích chèn vào, cần tìm vị trí tương đối
-            // đối với nội dung ẩn của nó
-            let tempOffset = 0;
-            let foundOriginal = false;
-            let currentWalker = document.createTreeWalker(containerNode.parentNode, NodeFilter.SHOW_TEXT); // Bắt đầu từ parent của containerNode
-            while (currentWalker.nextNode()) {
-                if (currentWalker.currentNode === containerNode) {
-                    tempOffset += cursorPosition;
-                    foundOriginal = true;
-                    break;
+        // Fallback nếu không tìm thấy chính xác trong text nodes (ví dụ, con trỏ ở cuối một phần tử)
+        if (!found) {
+            offsetInTextArea = range.startOffset; // Vị trí trong node chứa con trỏ
+            let tempNode = containerNode;
+            while(tempNode && tempNode !== textArea) {
+                let sibling = tempNode.previousSibling;
+                while(sibling) {
+                    if (sibling.nodeType === Node.TEXT_NODE) {
+                        offsetInTextArea += sibling.length;
+                    } else if (sibling.nodeType === Node.ELEMENT_NODE) {
+                         // Đối với các phần tử do tiện ích tạo ra, lấy textContent của phần tử ẩn
+                         const hiddenElement = sibling.querySelector('.hidden-original-text');
+                         if (hiddenElement) {
+                             offsetInTextArea += hiddenElement.textContent.length;
+                         } else {
+                             offsetInTextArea += sibling.textContent.length;
+                         }
+                    }
+                    sibling = sibling.previousSibling;
                 }
-                if (currentWalker.currentNode.nodeType === Node.TEXT_NODE) {
-                    tempOffset += currentWalker.currentNode.length;
-                }
+                tempNode = tempNode.parentNode;
             }
-             // Giả định tempOffset là vị trí trong span chứa văn bản gốc
-             // Cần tính offsetInTextArea dựa trên vị trí của span đó trong text-area
-             let parentSpan = containerNode.parentNode;
-             while(parentSpan && parentSpan.nodeName !== 'SPAN' && parentSpan !== textArea) {
-                parentSpan = parentSpan.parentNode;
-             }
-             if(parentSpan && parentSpan.classList.contains('hidden-original-text')) {
-                // Tìm vị trí của originalTextContainer trong toàn bộ textContent của textArea
-                let preWalker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT);
-                let currentTotalOffset = 0;
-                while(preWalker.nextNode()) {
-                    if (preWalker.currentNode === parentSpan.firstChild) { // firstChild vì originalTextContainer chỉ chứa textNode
-                        offsetInTextArea = currentTotalOffset + tempOffset;
-                        found = true;
-                        break;
-                    }
-                    if (preWalker.currentNode.nodeType === Node.TEXT_NODE) {
-                        currentTotalOffset += preWalker.currentNode.length;
-                    }
-                }
-             } else { // Nếu không tìm thấy hidden-original-text, có thể là masked-text-display, xử lý tương tự
-                 let preWalker = document.createTreeWalker(textArea, NodeFilter.SHOW_TEXT);
-                 let currentTotalOffset = 0;
-                 while(preWalker.nextNode()) {
-                     if (preWalker.currentNode === containerNode) {
-                         offsetInTextArea = currentTotalOffset + cursorPosition;
-                         found = true;
-                         break;
-                     }
-                     if (preWalker.currentNode.nodeType === Node.TEXT_NODE) {
-                         currentTotalOffset += preWalker.currentNode.length;
-                     }
-                 }
-             }
         }
+
 
         // Tìm điểm bắt đầu của câu
         let sentenceStart = offsetInTextArea;
@@ -683,7 +660,6 @@
              // Trường hợp chỉ có dấu câu hoặc khoảng trắng ở cuối
              sentenceEnd = fullText.length;
         }
-
 
         let sentenceToRead = fullText.substring(sentenceStart, sentenceEnd).trim();
 
